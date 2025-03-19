@@ -69,9 +69,14 @@ type BaseLanguageModel interface {
 }
 
 // LanguageModel is a Runnable implementation of BaseLanguageModel.
+// Note: This interface embeds BaseLanguageModel but not runnable.Runnable directly
+// to avoid method conflicts. Use AsRunnable() to get a Runnable implementation.
 type LanguageModel interface {
 	BaseLanguageModel
-	runnable.Runnable[Prompt, []Generation]
+	
+	// AsRunnable returns a Runnable implementation for this language model.
+	// This allows the language model to be used in runnable chains.
+	AsRunnable() runnable.Runnable[Prompt, []Generation]
 }
 
 // StreamingLanguageModel extends LanguageModel with streaming capabilities.
@@ -79,4 +84,127 @@ type StreamingLanguageModel interface {
 	LanguageModel
 	// StreamingGenerate returns a stream of tokens.
 	StreamingGenerate(ctx context.Context, prompt Prompt, options ModelOptions) (<-chan runnable.StreamingChunk[string], error)
+}
+
+// RunnableLanguageModel is a helper type that adapts a BaseLanguageModel to the Runnable interface.
+// This is used internally by implementations of LanguageModel.
+type RunnableLanguageModel struct {
+	model BaseLanguageModel
+}
+
+// NewRunnableLanguageModel creates a new RunnableLanguageModel from a BaseLanguageModel.
+func NewRunnableLanguageModel(model BaseLanguageModel) *RunnableLanguageModel {
+	return &RunnableLanguageModel{model: model}
+}
+
+// Run implements runnable.Runnable.Run
+func (r *RunnableLanguageModel) Run(ctx context.Context, input Prompt) ([]Generation, error) {
+	return r.model.GeneratePrompt(ctx, input, ModelOptions{})
+}
+
+// RunWithConfig implements runnable.Runnable.RunWithConfig
+func (r *RunnableLanguageModel) RunWithConfig(ctx context.Context, input Prompt, config runnable.RunConfig) ([]Generation, error) {
+	// Convert runnable config to model options if needed
+	options := ModelOptions{}
+	if config.Timeout > 0 {
+		options.Timeout = config.Timeout
+	}
+	return r.model.GeneratePrompt(ctx, input, options)
+}
+
+// Stream implements runnable.Runnable.Stream
+func (r *RunnableLanguageModel) Stream(ctx context.Context, input Prompt) (<-chan runnable.StreamingChunk[[]Generation], error) {
+	genChan, err := r.model.Stream(ctx, input, ModelOptions{})
+	if err != nil {
+		return nil, err
+	}
+	
+	// Convert the generation channel to a streaming chunk channel
+	resultChan := make(chan runnable.StreamingChunk[[]Generation])
+	go func() {
+		defer close(resultChan)
+		index := 0
+		for gen := range genChan {
+			resultChan <- runnable.StreamingChunk[[]Generation]{
+				Data:  []Generation{gen},
+				Index: index,
+				Final: false,
+			}
+			index++
+		}
+		// Send final chunk
+		resultChan <- runnable.StreamingChunk[[]Generation]{
+			Data:  []Generation{},
+			Index: index,
+			Final: true,
+		}
+	}()
+	
+	return resultChan, nil
+}
+
+// StreamWithConfig implements runnable.Runnable.StreamWithConfig
+func (r *RunnableLanguageModel) StreamWithConfig(ctx context.Context, input Prompt, config runnable.RunConfig) (<-chan runnable.StreamingChunk[[]Generation], error) {
+	// Convert runnable config to model options if needed
+	options := ModelOptions{}
+	if config.Timeout > 0 {
+		options.Timeout = config.Timeout
+	}
+	
+	genChan, err := r.model.Stream(ctx, input, options)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Convert the generation channel to a streaming chunk channel
+	resultChan := make(chan runnable.StreamingChunk[[]Generation])
+	go func() {
+		defer close(resultChan)
+		index := 0
+		for gen := range genChan {
+			resultChan <- runnable.StreamingChunk[[]Generation]{
+				Data:  []Generation{gen},
+				Index: index,
+				Final: false,
+			}
+			index++
+		}
+		// Send final chunk
+		resultChan <- runnable.StreamingChunk[[]Generation]{
+			Data:  []Generation{},
+			Index: index,
+			Final: true,
+		}
+	}()
+	
+	return resultChan, nil
+}
+
+// GetInputSchema implements runnable.Runnable.GetInputSchema
+func (r *RunnableLanguageModel) GetInputSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"prompt": map[string]interface{}{
+				"type": "string",
+				"description": "The prompt to send to the language model",
+			},
+		},
+	}
+}
+
+// GetOutputSchema implements runnable.Runnable.GetOutputSchema
+func (r *RunnableLanguageModel) GetOutputSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "array",
+		"items": map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"text": map[string]interface{}{
+					"type": "string",
+					"description": "The generated text",
+				},
+			},
+		},
+	}
 }

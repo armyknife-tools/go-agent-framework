@@ -38,7 +38,7 @@ func (m *RunnableMap[I, M, O]) RunWithConfig(ctx context.Context, input I, confi
 		var zeroO O
 		return zeroO, fmt.Errorf("error mapping input: %w", err)
 	}
-	
+
 	// Run the wrapped runnable
 	return m.runnable.RunWithConfig(ctx, mappedInput, config)
 }
@@ -55,7 +55,7 @@ func (m *RunnableMap[I, M, O]) StreamWithConfig(ctx context.Context, input I, co
 	if err != nil {
 		return nil, fmt.Errorf("error mapping input: %w", err)
 	}
-	
+
 	// Stream from the wrapped runnable
 	return m.runnable.StreamWithConfig(ctx, mappedInput, config)
 }
@@ -65,7 +65,7 @@ func (m *RunnableMap[I, M, O]) GetInputSchema() map[string]interface{} {
 	// For simplicity, return a generic schema
 	// A more advanced implementation would derive this from the mapper function
 	return map[string]interface{}{
-		"type": "any",
+		"type":        "any",
 		"description": "Input to be mapped",
 	}
 }
@@ -151,14 +151,14 @@ func schemaFromType(t reflect.Type) map[string]interface{} {
 	case reflect.Map:
 		keyType := t.Key()
 		elemType := t.Elem()
-		
+
 		if keyType.Kind() != reflect.String {
 			// Only string keys are supported in JSON Schema
 			return map[string]interface{}{
 				"type": "object",
 			}
 		}
-		
+
 		return map[string]interface{}{
 			"type":                 "object",
 			"additionalProperties": schemaFromType(elemType),
@@ -166,39 +166,39 @@ func schemaFromType(t reflect.Type) map[string]interface{} {
 	case reflect.Struct:
 		properties := make(map[string]interface{})
 		required := []string{}
-		
+
 		for i := 0; i < t.NumField(); i++ {
 			field := t.Field(i)
-			
+
 			// Skip unexported fields
 			if field.PkgPath != "" {
 				continue
 			}
-			
+
 			// Get the JSON name of the field
 			jsonName := field.Tag.Get("json")
 			if jsonName == "" || jsonName == "-" {
 				jsonName = field.Name
 			}
-			
+
 			// Add the field to the properties
 			properties[jsonName] = schemaFromType(field.Type)
-			
+
 			// Check if the field is required
-			if !field.Type.Kind().String().HasPrefix("*") {
+			if field.Type.Kind() != reflect.Ptr {
 				required = append(required, jsonName)
 			}
 		}
-		
+
 		schema := map[string]interface{}{
 			"type":       "object",
 			"properties": properties,
 		}
-		
+
 		if len(required) > 0 {
 			schema["required"] = required
 		}
-		
+
 		return schema
 	default:
 		return map[string]interface{}{
@@ -209,7 +209,7 @@ func schemaFromType(t reflect.Type) map[string]interface{} {
 
 // RunnableLambda wraps a function to make it a Runnable.
 type RunnableLambda[I, O any] struct {
-	fn        func(context.Context, I) (O, error)
+	fn         func(context.Context, I) (O, error)
 	inputType  reflect.Type
 	outputType reflect.Type
 }
@@ -217,7 +217,7 @@ type RunnableLambda[I, O any] struct {
 // NewRunnableLambda creates a new RunnableLambda with the given function.
 func NewRunnableLambda[I, O any](fn func(context.Context, I) (O, error)) *RunnableLambda[I, O] {
 	return &RunnableLambda[I, O]{
-		fn:        fn,
+		fn:         fn,
 		inputType:  reflect.TypeOf((*I)(nil)).Elem(),
 		outputType: reflect.TypeOf((*O)(nil)).Elem(),
 	}
@@ -242,10 +242,10 @@ func (l *RunnableLambda[I, O]) Stream(ctx context.Context, input I) (<-chan Stre
 // StreamWithConfig implements the Runnable interface.
 func (l *RunnableLambda[I, O]) StreamWithConfig(ctx context.Context, input I, config RunConfig) (<-chan StreamingChunk[O], error) {
 	outputCh := make(chan StreamingChunk[O], 1)
-	
+
 	go func() {
 		defer close(outputCh)
-		
+
 		output, err := l.fn(ctx, input)
 		if err != nil {
 			// Send error as metadata
@@ -260,14 +260,14 @@ func (l *RunnableLambda[I, O]) StreamWithConfig(ctx context.Context, input I, co
 			}
 			return
 		}
-		
+
 		outputCh <- StreamingChunk[O]{
 			Data:  output,
 			Index: 0,
 			Final: true,
 		}
 	}()
-	
+
 	return outputCh, nil
 }
 
