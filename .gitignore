@@ -1,6 +1,21 @@
+<<<<<<< HEAD
 # If you prefer the allow list template instead of the deny list, see community template:
 # https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
 #
+=======
+<<<<<<< HEAD
+# If you prefer the allow list template instead of the deny list, see community template:
+# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
+#
+=======
+<<<<<<< HEAD
+# If you prefer the allow list template instead of the deny list, see community template:
+# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
+#
+=======
+>>>>>>> 3e88f80 (First Commit)
+>>>>>>> dbfd822 (First Commit)
+>>>>>>> 7fb111e (First Commit)
 # Binaries for programs and plugins
 *.exe
 *.exe~
@@ -8,6 +23,13 @@
 *.so
 *.dylib
 
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> dbfd822 (First Commit)
+>>>>>>> 7fb111e (First Commit)
 # Test binary, built with `go test -c`
 *.test
 
@@ -23,3 +45,37 @@ go.work.sum
 
 # env file
 .env
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+=======
+=======
+# Test binary, built with 'go test -c'
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Dependency directories (remove the comment below to include it)
+vendor/
+
+# Go workspace file
+go.work
+
+# IDE directories
+.idea/
+.vscode/
+
+# Build directory
+bin/
+dist/
+
+# macOS specific files
+.DS_Store
+
+# Configuration files that might contain sensitive information
+.env
+*.config.local
+>>>>>>> 3e88f80 (First Commit)
+>>>>>>> dbfd822 (First Commit)
+>>>>>>> 7fb111e (First Commit)
