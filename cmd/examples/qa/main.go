@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
@@ -8,10 +9,9 @@ import (
 	"os"
 	"strings"
 	"time"
-	
+
 	"github.com/armyknife-tools/go-agent-framework/pkg/chains/qa"
 	"github.com/armyknife-tools/go-agent-framework/pkg/core/document"
-	"github.com/armyknife-tools/go-agent-framework/pkg/core/embedding"
 	"github.com/armyknife-tools/go-agent-framework/pkg/core/prompt"
 	"github.com/armyknife-tools/go-agent-framework/pkg/core/retriever"
 	"github.com/armyknife-tools/go-agent-framework/pkg/core/vectorstore"
@@ -26,7 +26,7 @@ var (
 
 func main() {
 	flag.Parse()
-	
+
 	// Check if API key is provided
 	if *apiKey == "" {
 		// Try to get API key from environment
@@ -35,27 +35,32 @@ func main() {
 			log.Fatal("API key not provided. Use --api-key flag or ANTHROPIC_API_KEY environment variable.")
 		}
 	}
-	
+
 	// Create a context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	
+
 	// Create the LLM
-	llm := anthropic.NewAnthropicLLM(*apiKey, 
-		anthropic.WithModel("claude-3-opus-20240229"),
+	llm := anthropic.NewAnthropicLLM(*apiKey,
+		anthropic.WithModel("claude-3-7-sonnet-20250219"),
 		anthropic.WithTemperature(0.0),
 		anthropic.WithMaxTokens(2000),
 	)
-	
+
 	fmt.Println("LangChain-Go Question Answering Example")
 	fmt.Println("=======================================")
-	
-	// If query is not provided, prompt the user
-	if *query == "" {
-		fmt.Print("Enter your question: ")
-		fmt.Scanln(query)
-	}
-	
+
+	// Change this:
+	fmt.Print("Enter your question: ")
+	fmt.Scanln(query)
+
+	// To this:
+	fmt.Print("Enter your question: ")
+	reader := bufio.NewReader(os.Stdin)
+	userQuestion, _ := reader.ReadString('\n')
+	userQuestion = strings.TrimSpace(userQuestion)
+	*query = userQuestion
+
 	// Load the document if provided
 	var docs []*document.Document
 	if *docFile != "" {
@@ -63,42 +68,42 @@ func main() {
 		if err != nil {
 			log.Fatalf("Error reading document file: %v", err)
 		}
-		
+
 		// Create a simple document
 		docs = append(docs, document.NewDocument(string(content), map[string]interface{}{
 			"source": *docFile,
 		}))
-		
+
 		fmt.Printf("Loaded document from %s\n", *docFile)
 	} else {
 		// Use example documents
 		docs = getExampleDocuments()
 		fmt.Println("Using example documents")
 	}
-	
+
 	// Display the query
 	fmt.Printf("\nQuestion: %s\n\n", *query)
-	
+
 	// Use a simple mock embedding model for this example
 	// In a real application, you would use a real embedding model
 	embedder := &MockEmbedder{}
-	
+
 	// Create a vector store and add the documents
 	store := vectorstore.NewMemoryVectorStore(embedder)
 	err := store.AddDocuments(ctx, docs)
 	if err != nil {
 		log.Fatalf("Error adding documents to vector store: %v", err)
 	}
-	
+
 	// Create a retriever
 	vectorRetriever := retriever.NewVectorStoreRetriever(store, retriever.WithK(2))
-	
+
 	// Create a QA prompt template
 	qaPrompt, err := prompt.NewRAGPrompt()
 	if err != nil {
 		log.Fatalf("Error creating QA prompt: %v", err)
 	}
-	
+
 	// Create a QA chain
 	qaChain, err := qa.NewQAChain(qa.QAChainOptions{
 		Retriever:  vectorRetriever,
@@ -109,7 +114,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error creating QA chain: %v", err)
 	}
-	
+
 	// Run the QA chain
 	result, err := qaChain.Run(ctx, qa.QAInput{
 		Question: *query,
@@ -117,10 +122,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error running QA chain: %v", err)
 	}
-	
+
 	// Print the answer
 	fmt.Printf("Answer: %s\n\n", result.Answer)
-	
+
 	// Print source documents
 	if len(result.SourceDocs) > 0 {
 		fmt.Println("Source Documents:")
@@ -130,7 +135,7 @@ func main() {
 				fmt.Printf(" (Source: %v)", source)
 			}
 			fmt.Println()
-			
+
 			// Print a snippet of the document
 			const maxLength = 200
 			content := doc.PageContent
@@ -164,21 +169,21 @@ func (m *MockEmbedder) EmbedQuery(ctx context.Context, query string) ([]float32,
 func (m *MockEmbedder) getSimpleEmbedding(text string) []float32 {
 	// In a real application, you would use a real embedding model
 	// This implementation just creates a simple embedding based on word presence
-	
+
 	// Use a fixed dimension
 	dim := 10
 	embedding := make([]float32, dim)
-	
+
 	// Some simple "features" to track
 	keywords := []string{"go", "language", "chain", "model", "embedding", "vector", "retriever", "question", "answer", "document"}
-	
+
 	for i, keyword := range keywords {
 		// Set the i-th dimension based on the presence of the keyword
 		if strings.Contains(strings.ToLower(text), keyword) {
 			embedding[i] = 1.0
 		}
 	}
-	
+
 	return embedding
 }
 

@@ -33,6 +33,11 @@ func NewBaseRetriever(retriever Retriever) *BaseRetriever {
 	}
 }
 
+// GetRelevantDocuments implements the Retriever interface.
+func (br *BaseRetriever) GetRelevantDocuments(ctx context.Context, query string) ([]*document.Document, error) {
+	return br.retriever.GetRelevantDocuments(ctx, query)
+}
+
 // Run implements the Runnable interface.
 func (br *BaseRetriever) Run(ctx context.Context, query string) ([]*document.Document, error) {
 	return br.retriever.GetRelevantDocuments(ctx, query)

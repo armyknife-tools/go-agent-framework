@@ -21,7 +21,7 @@ const (
 	defaultAPIVersion    = "2023-06-01"
 	defaultCompletionURL = "/v1/complete"
 	defaultMessagesURL   = "/v1/messages"
-	defaultModel         = "claude-3-opus-20240229"
+	defaultModel         = "claude-3-7-sonnet-20250219" // Update this line
 	defaultMaxTokens     = 1000
 )
 
@@ -120,14 +120,14 @@ func WithHttpClient(client *http.Client) Option {
 
 // completionRequest represents a request to the Anthropic completion API.
 type completionRequest struct {
-	Model       string  `json:"model"`
-	Prompt      string  `json:"prompt"`
-	MaxTokens   int     `json:"max_tokens_to_sample"`
-	Temperature float64 `json:"temperature,omitempty"`
-	TopP        float64 `json:"top_p,omitempty"`
-	TopK        int     `json:"top_k,omitempty"`
+	Model         string   `json:"model"`
+	Prompt        string   `json:"prompt"`
+	MaxTokens     int      `json:"max_tokens_to_sample"`
+	Temperature   float64  `json:"temperature,omitempty"`
+	TopP          float64  `json:"top_p,omitempty"`
+	TopK          int      `json:"top_k,omitempty"`
 	StopSequences []string `json:"stop_sequences,omitempty"`
-	Stream      bool    `json:"stream,omitempty"`
+	Stream        bool     `json:"stream,omitempty"`
 }
 
 // completionResponse represents a response from the Anthropic completion API.
@@ -139,14 +139,14 @@ type completionResponse struct {
 
 // messageRequest represents a request to the Anthropic messages API.
 type messageRequest struct {
-	Model       string       `json:"model"`
-	Messages    []chatMessage `json:"messages"`
-	MaxTokens   int          `json:"max_tokens"`
-	Temperature float64      `json:"temperature,omitempty"`
-	TopP        float64      `json:"top_p,omitempty"`
-	TopK        int          `json:"top_k,omitempty"`
-	StopSequences []string   `json:"stop_sequences,omitempty"`
-	Stream      bool         `json:"stream,omitempty"`
+	Model         string        `json:"model"`
+	Messages      []chatMessage `json:"messages"`
+	MaxTokens     int           `json:"max_tokens"`
+	Temperature   float64       `json:"temperature,omitempty"`
+	TopP          float64       `json:"top_p,omitempty"`
+	TopK          int           `json:"top_k,omitempty"`
+	StopSequences []string      `json:"stop_sequences,omitempty"`
+	Stream        bool          `json:"stream,omitempty"`
 }
 
 // chatMessage represents a message in the Anthropic API format.
@@ -157,12 +157,12 @@ type chatMessage struct {
 
 // messageResponse represents a response from the Anthropic messages API.
 type messageResponse struct {
-	ID         string `json:"id"`
-	Type       string `json:"type"`
-	Role       string `json:"role"`
+	ID         string           `json:"id"`
+	Type       string           `json:"type"`
+	Role       string           `json:"role"`
 	Content    []messageContent `json:"content"`
-	Model      string `json:"model"`
-	StopReason string `json:"stop_reason"`
+	Model      string           `json:"model"`
+	StopReason string           `json:"stop_reason"`
 	Usage      struct {
 		InputTokens  int `json:"input_tokens"`
 		OutputTokens int `json:"output_tokens"`
@@ -195,41 +195,34 @@ func (a *AnthropicLLM) Generate(ctx context.Context, prompts []llm.Prompt, optio
 			return result, fmt.Errorf("unsupported prompt type: %T", prompt)
 		}
 
-		// Anthropic requires prompts to start with "\n\nHuman: " and end with "\n\nAssistant: "
-		if promptStr != "" && !isAnthropicFormatted(promptStr) {
-			promptStr = fmt.Sprintf("\n\nHuman: %s\n\nAssistant:", promptStr)
+		// Create message request instead of completion request
+		reqBody := messageRequest{
+			Model: a.Model,
+			Messages: []chatMessage{
+				{
+					Role:    "user",
+					Content: promptStr,
+				},
+			},
+			MaxTokens:   a.MaxTokens,
+			Temperature: a.Temperature,
+			TopP:        a.TopP,
+			TopK:        a.TopK,
+			StopSequences: options.StopSequences,
 		}
 
 		// Apply options
-		temp := a.Temperature
 		if options.Temperature != 0 {
-			temp = options.Temperature
+			reqBody.Temperature = options.Temperature
 		}
-
-		maxTokens := a.MaxTokens
 		if options.MaxTokens != 0 {
-			maxTokens = options.MaxTokens
+			reqBody.MaxTokens = options.MaxTokens
 		}
-
-		topP := a.TopP
 		if options.TopP != 0 {
-			topP = options.TopP
+			reqBody.TopP = options.TopP
 		}
-
-		model := a.Model
 		if options.ModelName != "" {
-			model = options.ModelName
-		}
-
-		// Create request
-		reqBody := completionRequest{
-			Model:       model,
-			Prompt:      promptStr,
-			MaxTokens:   maxTokens,
-			Temperature: temp,
-			TopP:        topP,
-			TopK:        a.TopK,
-			StopSequences: options.StopSequences,
+			reqBody.Model = options.ModelName
 		}
 
 		// Serialize request
@@ -238,8 +231,8 @@ func (a *AnthropicLLM) Generate(ctx context.Context, prompts []llm.Prompt, optio
 			return result, fmt.Errorf("error marshaling request: %w", err)
 		}
 
-		// Create HTTP request
-		req, err := http.NewRequestWithContext(ctx, "POST", a.BaseURL+defaultCompletionURL, bytes.NewBuffer(jsonData))
+		// Send to messages API instead of completion API
+		req, err := http.NewRequestWithContext(ctx, "POST", a.BaseURL+defaultMessagesURL, bytes.NewBuffer(jsonData))
 		if err != nil {
 			return result, fmt.Errorf("error creating request: %w", err)
 		}
@@ -263,29 +256,30 @@ func (a *AnthropicLLM) Generate(ctx context.Context, prompts []llm.Prompt, optio
 		}
 
 		// Parse response
-		var compResp completionResponse
-		if err := json.NewDecoder(resp.Body).Decode(&compResp); err != nil {
+		var msgResp messageResponse
+		if err := json.NewDecoder(resp.Body).Decode(&msgResp); err != nil {
 			return result, fmt.Errorf("error decoding response: %w", err)
 		}
 
-		// Extract generation
-		generation := llm.Generation{
-			Text: compResp.Completion,
-			Metadata: map[string]interface{}{
-				"stop_reason": compResp.StopReason,
-				"model":       compResp.Model,
-			},
+		// Extract response content
+		contentText := ""
+		for _, content := range msgResp.Content {
+			if content.Type == "text" {
+				contentText += content.Text
+			}
 		}
 
-		result.Generations[i] = []llm.Generation{generation}
+		// Create result
+		result.Generations[i] = []llm.Generation{{
+			Text: contentText,
+			Metadata: map[string]interface{}{
+				"stop_reason": msgResp.StopReason,
+				"model":       msgResp.Model,
+			},
+		}}
 	}
 
 	return result, nil
-}
-
-// isAnthropicFormatted checks if a prompt is already formatted for Anthropic.
-func isAnthropicFormatted(prompt string) bool {
-	return len(prompt) >= 12 && prompt[:12] == "\n\nHuman: "
 }
 
 // GeneratePrompt implements the BaseLanguageModel interface.
@@ -294,11 +288,11 @@ func (a *AnthropicLLM) GeneratePrompt(ctx context.Context, prompt llm.Prompt, op
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if len(result.Generations) == 0 || len(result.Generations[0]) == 0 {
 		return nil, fmt.Errorf("no generations returned")
 	}
-	
+
 	return result.Generations[0], nil
 }
 
@@ -331,7 +325,7 @@ func (a *AnthropicLLM) StreamWithConfig(ctx context.Context, input llm.Prompt, c
 // GetInputSchema implements the Runnable interface.
 func (a *AnthropicLLM) GetInputSchema() map[string]interface{} {
 	return map[string]interface{}{
-		"type": "string",
+		"type":        "string",
 		"description": "The prompt to generate completions for",
 	}
 }
@@ -344,7 +338,7 @@ func (a *AnthropicLLM) GetOutputSchema() map[string]interface{} {
 			"type": "object",
 			"properties": map[string]interface{}{
 				"text": map[string]interface{}{
-					"type": "string",
+					"type":        "string",
 					"description": "The generated completion text",
 				},
 			},
@@ -426,12 +420,12 @@ func (a *AnthropicChat) GenerateChat(ctx context.Context, messages chat.MessageS
 
 	// Create request
 	reqBody := messageRequest{
-		Model:       model,
-		Messages:    anthMessages,
-		MaxTokens:   maxTokens,
-		Temperature: temp,
-		TopP:        topP,
-		TopK:        a.TopK,
+		Model:         model,
+		Messages:      anthMessages,
+		MaxTokens:     maxTokens,
+		Temperature:   temp,
+		TopP:          topP,
+		TopK:          a.TopK,
 		StopSequences: options.StopSequences,
 	}
 
@@ -519,8 +513,8 @@ func (a *AnthropicChat) StreamChat(ctx context.Context, messages chat.MessageSet
 func (a *AnthropicChat) SupportsToolCalls() bool {
 	// Check if the model supports tool calls
 	// More recent Claude models (Claude 3, etc.) do support tool calls
-	return a.Model == "claude-3-opus-20240229" || 
-		a.Model == "claude-3-sonnet-20240229" || 
+	return a.Model == "claude-3-opus-20240229" ||
+		a.Model == "claude-3-sonnet-20240229" ||
 		a.Model == "claude-3-haiku-20240307"
 }
 

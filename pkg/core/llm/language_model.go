@@ -69,14 +69,8 @@ type BaseLanguageModel interface {
 }
 
 // LanguageModel is a Runnable implementation of BaseLanguageModel.
-// Note: This interface embeds BaseLanguageModel but not runnable.Runnable directly
-// to avoid method conflicts. Use AsRunnable() to get a Runnable implementation.
 type LanguageModel interface {
 	BaseLanguageModel
-	
-	// AsRunnable returns a Runnable implementation for this language model.
-	// This allows the language model to be used in runnable chains.
-	AsRunnable() runnable.Runnable[Prompt, []Generation]
 }
 
 // StreamingLanguageModel extends LanguageModel with streaming capabilities.
@@ -87,7 +81,6 @@ type StreamingLanguageModel interface {
 }
 
 // RunnableLanguageModel is a helper type that adapts a BaseLanguageModel to the Runnable interface.
-// This is used internally by implementations of LanguageModel.
 type RunnableLanguageModel struct {
 	model BaseLanguageModel
 }
@@ -207,4 +200,10 @@ func (r *RunnableLanguageModel) GetOutputSchema() map[string]interface{} {
 			},
 		},
 	}
+}
+
+// ToRunnable converts a LanguageModel to a Runnable.
+// This is a convenience function for using a LanguageModel in a runnable chain.
+func ToRunnable(model LanguageModel) runnable.Runnable[Prompt, []Generation] {
+	return NewRunnableLanguageModel(model)
 }
